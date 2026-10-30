@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: medistore
+          POSTGRES_USER: medistore
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U medistore -d medistore"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      SECRET_KEY: ci-only-not-a-real-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz
+      DEBUG: "0"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      POSTGRES_DB: medistore
+      POSTGRES_USER: medistore
+      POSTGRES_PASSWORD: ci-only-password
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install requirements
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint with ruff
+        run: ruff check .
+
+      - name: Fail if a migration is missing
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Fail if the API schema has a warning
+        run: python manage.py spectacular --validate --fail-on-warn --file /dev/null
+
+      - name: Run the tests
+        run: python manage.py test -v 2
